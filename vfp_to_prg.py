@@ -134,6 +134,17 @@ class VFPClassExporter:
             # Original output shows it applied to ForeColor, BackColor, etc.
             # But relying on the value structure is probably enough as comma separated tuples are rare
             return f"{line[:match.start(1)]}= RGB({match.group(2)},{match.group(3)},{match.group(4)})"
+
+        # New logic for _memberdata
+        if line.strip().lower().startswith("_memberdata"):
+            # Look for <?xml start
+            xml_idx = line.find("<?xml")
+            if xml_idx != -1:
+                # Keep the part before '=' and the XML part
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                     return f"{parts[0]}= {line[xml_idx:]}"
+
         return line
 
     def export(self):
@@ -553,6 +564,12 @@ class VFPClassExporter:
 
         # Combine Output
 
+        # Build a map of property names that have explicit values
+        prop_values_map = {}
+        for p in prop_lines:
+             p_name = p.split('=')[0].strip().lower()
+             prop_values_map[p_name] = p
+
         # 1. Name
         name_prop = None
         final_props = []
@@ -567,6 +584,10 @@ class VFPClassExporter:
 
         # 2. Definitions (Reserved3)
         for mem_name, d_str in def_lines:
+            # Skip if this property has an explicit value in Properties field
+            if mem_name in prop_values_map:
+                continue
+
             if mem_name in prop_comments:
                 self.code_lines.append("")
                 self.code_lines.append(indent_text(f"*-- {prop_comments[mem_name]}", 1))
