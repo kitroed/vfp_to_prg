@@ -137,8 +137,16 @@ class VFPClassExporter:
 
         # New logic for _memberdata
         if line.strip().lower().startswith("_memberdata"):
-            # Look for <?xml start
+            # Look for XML start markers
+            # Priority 1: <?xml
             xml_idx = line.find("<?xml")
+
+            # Priority 2: <VFPData (case insensitive search for safety)
+            if xml_idx == -1:
+                match = re.search(r"<VFPData", line, re.IGNORECASE)
+                if match:
+                    xml_idx = match.start()
+
             if xml_idx != -1:
                 # Keep the part before '=' and the XML part
                 parts = line.split("=", 1)
