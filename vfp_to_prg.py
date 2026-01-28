@@ -75,6 +75,7 @@ class VFPDBF(dbfread.DBF):
         candidates.append(base + ".fpt")
         candidates.append(base + ".FPT")
         candidates.append(base + ".dbt")
+        candidates.append(base + ".DBT")
         # VFP
         if ext == ".vcx":
             candidates.append(base + ".vct")
@@ -87,7 +88,9 @@ class VFPDBF(dbfread.DBF):
             candidates.append(base + ".PJT")
 
         candidates.append(base + ".vct")
+        candidates.append(base + ".VCT")
         candidates.append(base + ".sct")
+        candidates.append(base + ".SCT")
 
         for c in candidates:
             if os.path.exists(c):
