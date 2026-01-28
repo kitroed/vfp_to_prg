@@ -773,7 +773,7 @@ class ProjectExporter:
             with open(src, "rb") as f:
                 raw = f.read()
             text = raw.decode("cp1252", errors="replace")
-            with open(dest, "w", encoding="utf-8") as f:
+            with open(dest, "w", encoding="utf-8", newline="") as f:
                 f.write(text)
         except Exception as e:
             print(f"ERROR copy {src}: {e}")
