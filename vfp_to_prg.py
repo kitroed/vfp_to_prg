@@ -459,8 +459,9 @@ class VFPClassExporter:
         self.code_lines.append("")
 
         def_line = f"DEFINE CLASS {name} AS {parent_class}"
-        if class_loc:
-            def_line += f' OF "{class_loc}"'
+        # User requested to omit OF clause for main class definitions relying on SET CLASSLIB
+        # if class_loc:
+        #    def_line += f' OF "{class_loc}"'
         self.code_lines.append(def_line)
 
         # Parse Protected/Hidden lists
