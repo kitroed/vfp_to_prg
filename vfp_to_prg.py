@@ -280,7 +280,6 @@ class VFPClassExporter:
                 obj_name,
                 parent_class,
                 base_class,
-                class_loc,
                 properties,
                 reserved3,
                 protected,
