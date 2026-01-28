@@ -347,9 +347,11 @@ class VFPClassExporter:
 
                             full_name = f"{p_str}.{obj_name}"
 
+                # Fallback to BaseClass if ParentClass is empty
+                actual_class = parent_class if parent_class else base_class
 
                 self.add_child_object(
-                    full_name, parent_class, base_class, properties, methods, real_name=obj_name
+                    full_name, actual_class, class_loc, properties, methods
                 )
 
     def _indent_method_body(self, methods_text, method_comments=None):
@@ -600,9 +602,11 @@ class VFPClassExporter:
             self.code_lines.append("")
             self.current_class = None
 
-    def add_child_object(self, name, parent_class, base_class, properties, methods, real_name=None):
+    def add_child_object(self, name, parent_class, class_loc, properties, methods):
         self.code_lines.append("")
         add_cmd = f"ADD OBJECT {name} AS {parent_class}"
+        if class_loc:
+             add_cmd += f' OF "{class_loc}"'
 
         if properties:
              add_cmd += " WITH ;"
@@ -616,7 +620,6 @@ class VFPClassExporter:
         if methods:
              pattern = re.compile(r"(PROCEDURE\s+)([a-zA-Z0-9_]+)", re.IGNORECASE)
              # Use the relative name for method definitions, not the full ADD OBJECT path?
-             # Check: original.scx.prg
              # If name passed here is "Container.Control", we likely want "Control"
              # But if name is "class.control", we want "control".
 
