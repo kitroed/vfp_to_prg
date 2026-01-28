@@ -3,7 +3,6 @@ import re
 import dbfread
 import contextlib
 import struct
-import shutil
 from dbfread import DBF
 
 
@@ -126,7 +125,7 @@ class VFPClassExporter:
     def _fix_prop_line(self, line):
         # Fix RGB colors: Prop = 128,128,128 -> Prop = RGB(128,128,128)
         # Regex to match: Name = R,G,B (with optional whitespace)
-        match = re.search(r'(=)\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$', line)
+        match = re.search(r"(=)\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$", line)
         if match:
             # Check if property name suggests color? Optional but safer.
             # Original output shows it applied to ForeColor, BackColor, etc.
@@ -183,8 +182,8 @@ class VFPClassExporter:
             rec = group["header"]
             for key in rec:
                 if key.lower() == "objname":
-                     val = rec[key]
-                     return val.lower() if isinstance(val, str) else ""
+                    val = rec[key]
+                    return val.lower() if isinstance(val, str) else ""
             return ""
 
         class_groups.sort(key=get_obj_name)
@@ -214,12 +213,14 @@ class VFPClassExporter:
 
                 sorted_libs = sorted(list(class_libs))
                 for lib in sorted_libs:
-                     self.code_lines.append(f"SET CLASSLIB TO {lib} ADDITIVE")
+                    self.code_lines.append(f"SET CLASSLIB TO {lib} ADDITIVE")
 
                 if sorted_libs:
                     self.code_lines.append("")
 
-                self.code_lines.append(f'{var_name}=NEWOBJECT("{main_form_name.lower()}")')
+                self.code_lines.append(
+                    f'{var_name}=NEWOBJECT("{main_form_name.lower()}")'
+                )
                 self.code_lines.append(f"{var_name}.Show")
                 self.code_lines.append("RETURN")
                 self.code_lines.append("")
@@ -227,26 +228,25 @@ class VFPClassExporter:
 
         # Process sorted groups
         for group in class_groups:
-             # Build parent hierarchy map
-             # Map: lower_case_obj_name -> (original_name, lower_case_parent_name)
-             obj_map = {}
+            # Build parent hierarchy map
+            # Map: lower_case_obj_name -> (original_name, lower_case_parent_name)
+            obj_map = {}
 
-             # Header name
-             h_rec = group["header"]
-             h_orig = get_val(h_rec, "ObjName")
+            # Header name
+            h_rec = group["header"]
+            h_orig = get_val(h_rec, "ObjName")
 
-             # Map children
-             for child in group["children"]:
-                 c_name = get_val(child, "ObjName")
-                 p_name = get_val(child, "Parent")
-                 if c_name:
-                     obj_map[c_name.lower()] = (c_name, p_name.lower() if p_name else "")
+            # Map children
+            for child in group["children"]:
+                c_name = get_val(child, "ObjName")
+                p_name = get_val(child, "Parent")
+                if c_name:
+                    obj_map[c_name.lower()] = (c_name, p_name.lower() if p_name else "")
 
+            # print(f"DEBUG MAP: {list(obj_map.keys())}")
 
-             # print(f"DEBUG MAP: {list(obj_map.keys())}")
-
-             self.process_record(group["header"], obj_map=obj_map, root_name=h_orig)
-             for child in group["children"]:
+            self.process_record(group["header"], obj_map=obj_map, root_name=h_orig)
+            for child in group["children"]:
                 self.process_record(child, obj_map=obj_map, root_name=h_orig)
 
         self.end_current_class()
@@ -293,53 +293,55 @@ class VFPClassExporter:
                 path_parts = [obj_name]
 
                 if obj_map is not None:
-                     curr = obj_name.lower()
-                     seen = {curr}
+                    curr = obj_name.lower()
+                    seen = {curr}
 
-                     while True:
-                         if curr not in obj_map:
-                             break
+                    while True:
+                        if curr not in obj_map:
+                            break
 
-                         _, p_lower = obj_map[curr]
-                         if not p_lower:
-                             break
+                        _, p_lower = obj_map[curr]
+                        if not p_lower:
+                            break
 
-                         # Check if parent is root
-                         if root_name and p_lower == root_name.lower():
-                             path_parts.append(root_name)
-                             break
+                        # Check if parent is root
+                        if root_name and p_lower == root_name.lower():
+                            path_parts.append(root_name)
+                            break
 
-                         # Look up parent original name
-                         if p_lower in obj_map:
-                             orig_p, _ = obj_map[p_lower]
-                             path_parts.append(orig_p)
-                             curr = p_lower
-                         else:
-                             # Parent not in children map?
-                             # If parent is root
-                             if root_name and p_lower == root_name.lower():
-                                 path_parts.append(root_name)
-                             break
+                        # Look up parent original name
+                        if p_lower in obj_map:
+                            orig_p, _ = obj_map[p_lower]
+                            path_parts.append(orig_p)
+                            curr = p_lower
+                        else:
+                            # Parent not in children map?
+                            # If parent is root
+                            if root_name and p_lower == root_name.lower():
+                                path_parts.append(root_name)
+                            break
 
-                         if curr in seen:
-                             break
-                         seen.add(curr)
+                        if curr in seen:
+                            break
+                        seen.add(curr)
 
                 # Decide full_name based on traversal results
                 path_reaches_root = False
                 if len(path_parts) > 1:
                     # check if the last part is indeed the root
                     if root_name and path_parts[-1].lower() == root_name.lower():
-                         path_reaches_root = True
+                        path_reaches_root = True
 
                 if path_reaches_root:
-                     full_name = ".".join(reversed(path_parts))
+                    full_name = ".".join(reversed(path_parts))
                 else:
                     # Traversal failed or didn't reach root.
                     # Use raw Parent field if it provides better info.
                     if parent:
                         # If parent looks like a path or is the root
-                        if "." in parent or (root_name and parent.lower() == root_name.lower()):
+                        if "." in parent or (
+                            root_name and parent.lower() == root_name.lower()
+                        ):
                             # Adjust parent case if it matches root
                             p_str = parent
                             if root_name and parent.lower() == root_name.lower():
@@ -368,8 +370,11 @@ class VFPClassExporter:
         # Capture method name in group 1
         # Supports: PROCEDURE Name, FUNCTION Name, PROTECTED PROCEDURE Name, etc.
         # Updated to support Object.Method syntax (dots in name)
-        start_re = re.compile(r'^\s*(?:HIDDEN\s+|PROTECTED\s+)?(?:PROCEDURE|FUNCTION)\s+([a-zA-Z0-9_.]+)', re.IGNORECASE)
-        end_re = re.compile(r'^\s*(?:ENDPROC|ENDFUNC)', re.IGNORECASE)
+        start_re = re.compile(
+            r"^\s*(?:HIDDEN\s+|PROTECTED\s+)?(?:PROCEDURE|FUNCTION)\s+([a-zA-Z0-9_.]+)",
+            re.IGNORECASE,
+        )
+        end_re = re.compile(r"^\s*(?:ENDPROC|ENDFUNC)", re.IGNORECASE)
 
         in_method = False
 
@@ -400,7 +405,7 @@ class VFPClassExporter:
                     body_buffer.pop()
 
                 for b in body_buffer:
-                     # Preserve relative indent but add one tab
+                    # Preserve relative indent but add one tab
                     output_lines.append(f"\t{b}" if b.strip() else "")
                 body_buffer = []
 
@@ -420,29 +425,21 @@ class VFPClassExporter:
                     if stripped:
                         output_lines.append(line)
 
-        # Cleanup trailing empty lines at end of file
+        # Clean up trailing empty lines at end of file
         while output_lines and not output_lines[-1].strip():
             output_lines.pop()
 
-        return '\n'.join(output_lines)
+        return "\n".join(output_lines)
 
     def start_new_class(
-        self,
-        name,
-        parent_class,
-        base_class,
-        class_loc,
-        properties,
-        reserved3,
-        protected,
-        methods,
+        self, name, parent_class, base_class, properties, reserved3, protected, methods
     ):
         self.current_class = name
         self.deferred_methods = []
         # Reset method comments for the new class
         self.method_comments = {}
 
-        self.code_lines.append(f"**************************************************")
+        self.code_lines.append("**************************************************")
 
         # Check file extension to determine label
         ext = os.path.splitext(self.file_path)[1].lower()
@@ -455,13 +452,10 @@ class VFPClassExporter:
 
         self.code_lines.append(f"*-- ParentClass:  {parent_class}")
         self.code_lines.append(f"*-- BaseClass:    {base_class}")
-        self.code_lines.append(f"**************************************************")
+        self.code_lines.append("**************************************************")
         self.code_lines.append("")
 
         def_line = f"DEFINE CLASS {name} AS {parent_class}"
-        # User requested to omit OF clause for main class definitions relying on SET CLASSLIB
-        # if class_loc:
-        #    def_line += f' OF "{class_loc}"'
         self.code_lines.append(def_line)
 
         # Parse Protected/Hidden lists
@@ -470,9 +464,10 @@ class VFPClassExporter:
         if protected:
             for p in protected.splitlines():
                 p = p.strip()
-                if not p: continue
-                if '^' in p:
-                    hidden_list.append(p.replace('^',''))
+                if not p:
+                    continue
+                if "^" in p:
+                    hidden_list.append(p.replace("^", ""))
                 else:
                     protected_list.append(p)
 
@@ -486,32 +481,33 @@ class VFPClassExporter:
         if reserved3:
             for line in reserved3.splitlines():
                 line = line.strip()
-                if not line: continue
+                if not line:
+                    continue
 
                 # Method Comment: Starts with *
                 # Format: *MethodName Description
-                if line.startswith('*'):
+                if line.startswith("*"):
                     content = line[1:].strip()
                     # split on first space
-                    parts = content.split(' ', 1)
+                    parts = content.split(" ", 1)
                     if len(parts) == 2:
                         m_name, m_desc = parts
                         self.method_comments[m_name.lower()] = m_desc.strip()
                     continue
 
-                if line.startswith('^'):
-                     # Array definition
+                if line.startswith("^"):
+                    # Array definition
                     raw = line[1:]
                     # VFP Browser logic: replace ( with [, ) with ], and ,0] with ]
-                    raw = raw.replace('(', '[').replace(')', ']').replace(',0]', ']')
+                    raw = raw.replace("(", "[").replace(")", "]").replace(",0]", "]")
 
                     # Split on space max 1
-                    parts = raw.split(' ', 1)
+                    parts = raw.split(" ", 1)
                     arr_def = parts[0]
                     arr_desc = parts[1] if len(parts) > 1 else ""
 
                     def_str = f"DIMENSION {arr_def}"
-                    mem_name = arr_def.split('[')[0].lower()
+                    mem_name = arr_def.split("[")[0].lower()
                     names[mem_name] = True
 
                     if mem_name in hidden_list:
@@ -520,12 +516,14 @@ class VFPClassExporter:
                         def_str = f"PROTECTED {def_str}"
 
                     if arr_desc:
-                         prop_comments[mem_name] = arr_desc
+                        prop_comments[mem_name] = arr_desc
 
-                    def_lines.append((mem_name, def_str)) # Store tuple to match sorting/grouping later?
+                    def_lines.append(
+                        (mem_name, def_str)
+                    )  # Store tuple to match sorting/grouping later?
                 else:
                     # Property definition: PropName Description
-                    parts = line.split(' ', 1)
+                    parts = line.split(" ", 1)
                     mem_name = parts[0].lower()
                     mem_desc = parts[1] if len(parts) > 1 else ""
 
@@ -534,12 +532,12 @@ class VFPClassExporter:
                         names[mem_name] = True
                         def_str = f"{mem_name} = .F."
                         if mem_name in hidden_list:
-                             def_str = f"HIDDEN {def_str}"
+                            def_str = f"HIDDEN {def_str}"
                         elif mem_name in protected_list:
-                             def_str = f"PROTECTED {def_str}"
+                            def_str = f"PROTECTED {def_str}"
 
                         if mem_desc:
-                             prop_comments[mem_name] = mem_desc
+                            prop_comments[mem_name] = mem_desc
 
                         def_lines.append((mem_name, def_str))
 
@@ -547,12 +545,9 @@ class VFPClassExporter:
         prop_lines = []
         if properties:
             for line in properties.splitlines():
-                if not line.strip(): continue
-                # Extract property name
-                parts = line.split('=')
-                if parts:
-                    pname = parts[0].strip().lower()
-                    prop_lines.append(self._fix_prop_line(line.strip()))
+                if not line.strip():
+                    continue
+                prop_lines.append(self._fix_prop_line(line.strip()))
 
         # Combine Output
 
@@ -560,27 +555,27 @@ class VFPClassExporter:
         name_prop = None
         final_props = []
         for p in prop_lines:
-             if p.lower().startswith("name ="):
-                 name_prop = p
-             else:
-                 final_props.append(p)
+            if p.lower().startswith("name ="):
+                name_prop = p
+            else:
+                final_props.append(p)
 
         if name_prop:
-             self.code_lines.append(indent_text(name_prop, 1))
+            self.code_lines.append(indent_text(name_prop, 1))
 
         # 2. Definitions (Reserved3)
         for mem_name, d_str in def_lines:
             if mem_name in prop_comments:
-                 self.code_lines.append("")
-                 self.code_lines.append(indent_text(f"*-- {prop_comments[mem_name]}", 1))
+                self.code_lines.append("")
+                self.code_lines.append(indent_text(f"*-- {prop_comments[mem_name]}", 1))
             self.code_lines.append(indent_text(d_str, 1))
 
         # 3. Properties
         for p in final_props:
             # check if we have a comment for this property?
-            p_name = p.split('=')[0].strip().lower()
+            p_name = p.split("=")[0].strip().lower()
             if p_name in prop_comments:
-                 pass
+                pass
 
             self.code_lines.append(indent_text(p, 1))
 
@@ -596,7 +591,9 @@ class VFPClassExporter:
                 all_methods = "\n\n".join(self.deferred_methods)
                 # Use _indent_method_body to handle indentation properly
                 # Pass collected method comments
-                indented_methods = self._indent_method_body(all_methods, self.method_comments)
+                indented_methods = self._indent_method_body(
+                    all_methods, self.method_comments
+                )
                 self.code_lines.append(indent_text(indented_methods, 1))
 
             self.code_lines.append("ENDDEFINE")
@@ -607,58 +604,55 @@ class VFPClassExporter:
         self.code_lines.append("")
         add_cmd = f"ADD OBJECT {name} AS {parent_class}"
         if class_loc:
-             add_cmd += f' OF "{class_loc}"'
+            add_cmd += f' OF "{class_loc}"'
 
         if properties:
-             add_cmd += " WITH ;"
-             self.code_lines.append(indent_text(add_cmd, 1))
-             props_list = [self._fix_prop_line(p.strip()) for p in properties.splitlines() if p.strip()]
-             props_formatted = ", ;\n".join(props_list)
-             self.code_lines.append(indent_text(props_formatted, 2))
+            add_cmd += " WITH ;"
+            self.code_lines.append(indent_text(add_cmd, 1))
+            props_list = [
+                self._fix_prop_line(p.strip())
+                for p in properties.splitlines()
+                if p.strip()
+            ]
+            props_formatted = ", ;\n".join(props_list)
+            self.code_lines.append(indent_text(props_formatted, 2))
         else:
-             self.code_lines.append(indent_text(add_cmd, 1))
+            self.code_lines.append(indent_text(add_cmd, 1))
 
         if methods:
-             pattern = re.compile(r"(PROCEDURE\s+)([a-zA-Z0-9_]+)", re.IGNORECASE)
-             # Use the relative name for method definitions, not the full ADD OBJECT path?
-             # If name passed here is "Container.Control", we likely want "Control"
-             # But if name is "class.control", we want "control".
+            pattern = re.compile(r"(PROCEDURE\s+)([a-zA-Z0-9_]+)", re.IGNORECASE)
+            # Use the relative name for method definitions, not the full ADD OBJECT path?
+            # If name passed here is "Container.Control", we likely want "Control"
+            # But if name is "class.control", we want "control".
 
-             # The rule seems to be: exclude the Root Class Name from the procedure prefix.
+            # The rule seems to be: exclude the Root Class Name from the procedure prefix.
 
-             def replacer(match):
-                 # name is e.g. "Root.Container.Control"
-                 # We want "Container.Control"
+            def replacer(match):
+                # name is e.g. "Root.Container.Control"
+                # We want "Container.Control"
 
-                 parts = name.split('.')
-                 # If parts[0] is the class name, drop it?
-                 # But we don't strictly know if parts[0] is the class name here without context,
-                 # though typically it is for SCX export.
-                 # Let's assume if it contains dots, we check if the first part is the main class.
-                 # Actually, we can use real_name strategy if needed, but we built 'name' to include root.
+                # Heuristic: if name has dots, strip the first segment if it matches current_class?
+                # self.current_class is set.
 
-                 # Heuristic: if name has dots, strip the first segment if it matches current_class?
-                 # self.current_class is set.
+                prefix = name
+                if self.current_class and prefix.lower().startswith(
+                    self.current_class.lower() + "."
+                ):
+                    prefix = prefix[len(self.current_class) + 1:]
 
-                 prefix = name
-                 if self.current_class and prefix.lower().startswith(self.current_class.lower() + '.'):
-                      prefix = prefix[len(self.current_class)+1:]
+                # Strip parent container path because VFP exports only the immediate object name?
+                # Looking at original VFP exports:
+                # PROCEDURE txtpriority.Valid
+                # But the object is ADD OBJECT Root.Container.Control.txtPriority
+                # This implies we ONLY want the leaf name + method name
 
-                 # Strip parent container path because VFP exports only the immediate object name?
-                 # Looking at original VFP exports:
-                 # PROCEDURE txtpriority.Valid
-                 # But the object is ADD OBJECT Root.Container.Control.txtPriority
-                 # This implies we ONLY want the leaf name + method name
+                if "." in prefix:
+                    prefix = prefix.split(".")[-1]
 
-                 if '.' in prefix:
-                     prefix = prefix.split('.')[-1]
+                return f"{match.group(1)}{prefix}.{match.group(2)}"
 
-                 return f"{match.group(1)}{prefix}.{match.group(2)}"
-
-             fixed_methods = pattern.sub(replacer, methods)
-             self.deferred_methods.append(fixed_methods)
-
-
+            fixed_methods = pattern.sub(replacer, methods)
+            self.deferred_methods.append(fixed_methods)
 
 
 class ProjectExporter:
@@ -680,8 +674,12 @@ class ProjectExporter:
                 char_decode_errors="ignore",
             )
         except dbfread.exceptions.MissingMemoFile:
-            print("Warning: Memo file missing for PJX. Attempting to read without memo.")
-            table = DBF(self.pjx_path, load=True, encoding="cp1252", char_decode_errors="ignore")
+            print(
+                "Warning: Memo file missing for PJX. Attempting to read without memo."
+            )
+            table = DBF(
+                self.pjx_path, load=True, encoding="cp1252", char_decode_errors="ignore"
+            )
 
         print(f"Found {len(table)} records.")
 
@@ -691,11 +689,11 @@ class ProjectExporter:
             type_code = self._get_val(record, "Type")
 
             # Skip empty names or project header (Type 'H')
-            if not name or type_code == 'H':
+            if not name or type_code == "H":
                 continue
 
             # Clean name (remove nulls etc)
-            name = name.strip('\x00').strip()
+            name = name.strip("\x00").strip()
 
             src_path = self._resolve_path(name)
             if not src_path:
@@ -708,18 +706,18 @@ class ProjectExporter:
             except ValueError:
                 rel_path = os.path.basename(src_path)
 
-            if rel_path.startswith('..'):
+            if rel_path.startswith(".."):
                 dest_rel = os.path.basename(src_path)
             else:
                 dest_rel = rel_path
 
             dest_full_path = os.path.join(self.output_dir, dest_rel)
 
-            if type_code.upper() in ['K', 's']: # Form (.scx)
+            if type_code.upper() in ["K", "s"]:  # Form (.scx)
                 self._convert_and_write(src_path, dest_full_path + ".prg")
-            elif type_code.upper() in ['V', 'c']: # Class (.vcx)
+            elif type_code.upper() in ["V", "c"]:  # Class (.vcx)
                 self._convert_and_write(src_path, dest_full_path + ".prg")
-            elif type_code.upper() == 'P': # Program (.prg)
+            elif type_code.upper() == "P":  # Program (.prg)
                 self._copy_text(src_path, dest_full_path)
 
             processed_count += 1
@@ -761,7 +759,7 @@ class ProjectExporter:
         try:
             exporter = VFPClassExporter(src)
             content = exporter.export()
-            with open(dest, 'w', encoding='utf-8') as f:
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write(content)
         except Exception as e:
             print(f"ERROR convert {src}: {e}")
@@ -773,10 +771,10 @@ class ProjectExporter:
         print(f"Copying:    {os.path.basename(src)}")
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         try:
-            with open(src, 'rb') as f:
+            with open(src, "rb") as f:
                 raw = f.read()
-            text = raw.decode('cp1252', errors='replace')
-            with open(dest, 'w', encoding='utf-8') as f:
+            text = raw.decode("cp1252", errors="replace")
+            with open(dest, "w", encoding="utf-8") as f:
                 f.write(text)
         except Exception as e:
             print(f"ERROR copy {src}: {e}")
@@ -794,16 +792,16 @@ if __name__ == "__main__":
 
         try:
             if ext == ".pjx":
-                 if len(sys.argv) >= 3:
-                     out_dir = sys.argv[2]
-                 else:
-                     # Default to folder named after project + "_export"
-                     base = os.path.splitext(os.path.basename(fpath))[0]
-                     out_dir = os.path.join(os.path.dirname(fpath), base + "_export")
+                if len(sys.argv) >= 3:
+                    out_dir = sys.argv[2]
+                else:
+                    # Default to folder named after project + "_export"
+                    base = os.path.splitext(os.path.basename(fpath))[0]
+                    out_dir = os.path.join(os.path.dirname(fpath), base + "_export")
 
-                 exporter = ProjectExporter(fpath, out_dir)
-                 exporter.export()
-                 print(f"Export completed to: {out_dir}")
+                exporter = ProjectExporter(fpath, out_dir)
+                exporter.export()
+                print(f"Export completed to: {out_dir}")
 
             else:
                 exporter = VFPClassExporter(fpath)
