@@ -86,6 +86,9 @@ class VFPDBF(dbfread.DBF):
         elif ext == ".pjx":
             candidates.append(base + ".pjt")
             candidates.append(base + ".PJT")
+        elif ext == ".dbc":
+            candidates.append(base + ".dct")
+            candidates.append(base + ".DCT")
 
         candidates.append(base + ".vct")
         candidates.append(base + ".VCT")
@@ -811,18 +814,314 @@ class ProjectExporter:
             print(f"ERROR copy {src}: {e}")
 
 
+class DBCExporter:
+    """Exports Visual FoxPro DBC (Database Container) files to PRG format."""
+
+    def __init__(self, dbc_path, output_dir):
+        self.dbc_path = dbc_path
+        self.output_dir = output_dir
+        self.dbc_name = os.path.splitext(os.path.basename(dbc_path))[0]
+
+        # Storage for parsed objects
+        self.database_record = None
+        self.stored_procedures_code = ""
+        self.views = []
+        self.tables = []
+        self.relations = []
+        self.connections = []
+
+    def export(self):
+        """Main export orchestration method."""
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
+        print(f"Opening DBC: {self.dbc_path}")
+
+        # Read DBC file
+        records = self._read_dbc()
+        if not records:
+            print("ERROR: Could not read DBC file")
+            return
+
+        print(f"Found {len(records)} records.")
+
+        # Parse records by object type
+        self._parse_records(records)
+
+        # Export each object type
+        self._export_stored_procedures()
+        self._export_views()
+        self._export_tables()
+        self._export_relations()
+
+        print(f"Export completed to: {self.output_dir}")
+
+    def _read_dbc(self):
+        """Opens DBC file and returns list of records."""
+        try:
+            table = VFPDBF(
+                self.dbc_path,
+                load=True,
+                encoding="cp1252",
+                char_decode_errors="ignore",
+            )
+            return list(table)
+        except dbfread.exceptions.MissingMemoFile:
+            print("Warning: DCT memo file missing. Attempting to read without memo.")
+            try:
+                table = dbfread.DBF(
+                    self.dbc_path,
+                    load=True,
+                    encoding="cp1252",
+                    char_decode_errors="ignore",
+                )
+                return list(table)
+            except Exception as e:
+                print(f"ERROR reading DBC: {e}")
+                return None
+        except Exception as e:
+            print(f"ERROR reading DBC: {e}")
+            return None
+
+    def _get_field_value(self, record, field_name):
+        """Get field value with case-insensitive fallback."""
+        if field_name in record:
+            return record[field_name]
+        field_name_lower = field_name.lower()
+        for k in record.keys():
+            if k.lower() == field_name_lower:
+                return record[k]
+        return ""
+
+    def _parse_records(self, records):
+        """Categorize records by ObjectType."""
+        for record in records:
+            obj_type = self._get_field_value(record, "ObjectType")
+            obj_name = self._get_field_value(record, "ObjectName")
+
+            # Clean object name
+            if obj_name:
+                obj_name = obj_name.strip("\x00").strip()
+
+            if obj_type == "Database":
+                # Database record contains stored procedures in Code field.
+                # Avoid 'StoredProceduresObject' which contains compiled binary code.
+                if obj_name == "StoredProceduresObject":
+                    pass # Skip binary object
+                else:
+                    code = self._get_field_value(record, "Code")
+                    if code:
+                        # Prioritize explicit Source record
+                        if obj_name == "StoredProceduresSource":
+                             self.stored_procedures_code = code
+                        # Use generic Database record code if we haven't found specific source yet
+                        elif not self.stored_procedures_code and obj_name == "Database":
+                             self.stored_procedures_code = code
+                        # If just generic "Database" and we already have code, keep check??
+                        # Standard DBC has ObjectName='Database'.
+                        elif not self.stored_procedures_code:
+                             self.stored_procedures_code = code
+
+            elif obj_type == "View":
+                self.views.append({
+                    "name": obj_name,
+                    "code": self._get_field_value(record, "Code"),
+                    "property": self._get_field_value(record, "Property"),
+                    "record": record
+                })
+
+            elif obj_type == "Table":
+                self.tables.append({
+                    "name": obj_name,
+                    "property": self._get_field_value(record, "Property"),
+                    "record": record
+                })
+
+            elif obj_type == "Connection":
+                self.connections.append({
+                    "name": obj_name,
+                    "property": self._get_field_value(record, "Property"),
+                    "record": record
+                })
+
+    def _export_stored_procedures(self):
+        """Export all stored procedures to a single PRG file."""
+        if not self.stored_procedures_code:
+            print("No stored procedures found.")
+            return
+
+        output_file = os.path.join(self.output_dir, f"{self.dbc_name}_procedures.prg")
+
+        try:
+            header = "*" * 57 + "\n"
+            header += f"*-- Database Stored Procedures: {self.dbc_name}\n"
+            header += "*" * 57 + "\n\n"
+
+            content = header + self.stored_procedures_code.replace('\r\n', '\n')
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            print(f"Exported stored procedures: {os.path.basename(output_file)}")
+        except Exception as e:
+            print(f"ERROR exporting stored procedures: {e}")
+
+    def _get_printable_property(self, prop_data):
+        """Extracts printable text from property field or returns placeholder."""
+        if not prop_data:
+            return ""
+
+        # Check if it looks like binary (contains control chars)
+        # We'll allow tab, newline, return.
+        # Range \x00-\x08 matches NULL to Backspace
+        # \x0b is Vertical Tab, \x0c is Form Feed
+        # \x0e-\x1f matches Shift Out to Unit Separator
+        if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', prop_data):
+            # It's binary. Try to extract sequences of printable chars > 4 length
+            # to see if there's anything useful.
+            found = re.findall(r'[\x20-\x7E]{4,}', prop_data)
+            if found:
+                # Limit to first few matches to avoid huge lines
+                return "(Binary Data) Strings found: " + ", ".join(found[:10]) + ("..." if len(found) > 10 else "")
+            return "(Binary Property Data)"
+        return prop_data
+
+    def _get_printable_code(self, code_data):
+        """Sanitizes code text by removing binary control characters."""
+        if not code_data:
+            return ""
+        # Remove control characters except tab (0x09), newline (0x0A), carriage return (0x0D)
+        # This fixes issues where Stored Procedures contain null bytes or other garbage
+        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', code_data)
+
+    def _export_views(self):
+        """Export each view to a separate PRG file."""
+        if not self.views:
+            print("No views found.")
+            return
+
+        for view in self.views:
+            view_name = view["name"]
+            if not view_name:
+                continue
+
+            output_file = os.path.join(
+                self.output_dir,
+                f"{self.dbc_name}_view_{view_name.lower()}.prg"
+            )
+
+            try:
+                header = "*" * 57 + "\n"
+                header += f"*-- View: {view_name}\n"
+                header += f"*-- Database: {self.dbc_name}\n"
+                header += "*" * 57 + "\n\n"
+
+                # Add view code (CREATE SQL VIEW statement)
+                code = view["code"] or ""
+                code = code.replace('\r\n', '\n')
+
+                content = header + code
+
+                # Add view properties if available
+                if view["property"]:
+                    printable_prop = self._get_printable_property(view["property"])
+                    content += "\n\n*-- View Properties\n"
+                    content += f"*-- {printable_prop.replace(chr(13)+chr(10), chr(10))}\n"
+
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+                print(f"Exported view: {view_name}")
+            except Exception as e:
+                print(f"ERROR exporting view {view_name}: {e}")
+
+    def _export_tables(self):
+        """Export each table structure to a separate PRG file."""
+        if not self.tables:
+            print("No tables found.")
+            return
+
+        for table in self.tables:
+            table_name = table["name"]
+            if not table_name:
+                continue
+
+            output_file = os.path.join(
+                self.output_dir,
+                f"{self.dbc_name}_table_{table_name.lower()}.prg"
+            )
+
+            try:
+                header = "*" * 57 + "\n"
+                header += f"*-- Table Structure: {table_name}\n"
+                header += f"*-- Database: {self.dbc_name}\n"
+                header += "*" * 57 + "\n\n"
+
+                content = header
+
+                # Add table properties/metadata
+                prop = table["property"] or ""
+                if prop:
+                    printable_prop = self._get_printable_property(prop)
+                    content += f"*-- Table Properties:\n"
+                    content += f"*-- {printable_prop.replace(chr(13)+chr(10), chr(10))}\n\n"
+
+                content += f"*-- Table: {table_name}\n"
+                content += f"*-- (Detailed table structure would require reading the actual DBF file)\n"
+
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+                print(f"Exported table: {table_name}")
+            except Exception as e:
+                print(f"ERROR exporting table {table_name}: {e}")
+
+    def _export_relations(self):
+        """Export database relations documentation."""
+        # Relations are stored in RiInfo fields
+        # This is a documentation export rather than executable code
+        output_file = os.path.join(self.output_dir, f"{self.dbc_name}_relations.prg")
+
+        try:
+            header = "*" * 57 + "\n"
+            header += f"*-- Database Relations: {self.dbc_name}\n"
+            header += "*" * 57 + "\n\n"
+
+            content = header
+            content += "*-- Relations information would be parsed from RiInfo fields\n"
+            content += "*-- (Implementation pending)\n"
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            print(f"Exported relations: {os.path.basename(output_file)}")
+        except Exception as e:
+            print(f"ERROR exporting relations: {e}")
+
+
 if __name__ == "__main__":
     import sys
     import traceback
 
     if len(sys.argv) < 2:
-        print("Usage: python vfp_to_prg.py <path_to_vcx_or_scx_or_pjx> [output_dir]")
+        print("Usage: python vfp_to_prg.py <path_to_vcx_or_scx_or_pjx_or_dbc> [output_dir]")
     else:
         fpath = sys.argv[1]
         ext = os.path.splitext(fpath)[1].lower()
 
         try:
-            if ext == ".pjx":
+            if ext == ".dbc":
+                if len(sys.argv) >= 3:
+                    out_dir = sys.argv[2]
+                else:
+                    # Default to folder named after DBC + "_dbc_export"
+                    base = os.path.splitext(os.path.basename(fpath))[0]
+                    out_dir = os.path.join(os.path.dirname(fpath), base + "_dbc_export")
+
+                exporter = DBCExporter(fpath, out_dir)
+                exporter.export()
+
+            elif ext == ".pjx":
                 if len(sys.argv) >= 3:
                     out_dir = sys.argv[2]
                 else:
